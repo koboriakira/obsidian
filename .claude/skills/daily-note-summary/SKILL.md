@@ -5,9 +5,9 @@ argument-hint: "[YYYY-MM-DD] (省略時は今日の日付)"
 allowed-tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 
-# 日次記録サマリー → dailynote 追記
+# 日次記録サマリー → dailynote 生成
 
-Obsidian Vault から指定日のセッション記録を収集し、プロジェクト別に構造化した要約を dailynote に追記する。
+Obsidian Vault から指定日のセッション記録を収集し、プロジェクト別に構造化した要約を dailynote ディレクトリに生成する。
 
 ## Vault パス
 
@@ -15,11 +15,22 @@ Obsidian Vault から指定日のセッション記録を収集し、プロジ�
 VAULT=$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault
 ```
 
+## ディレクトリ構造
+
+```
+dailynote/{YYYY}/{MM}/{DD}/
+├── {DATE}.md          ← 既存。Slack Activity Summary等。改変しない
+├── screenocr.md       ← analyze-screen-ocr スキルが生成（別スキル）
+├── AIセッション.md     ← このスキルが生成（Step 4）
+└── summary.md         ← このスキルが生成（Step 5）
+```
+
 ## 実行手順
 
 ### 1. 対象日の決定
 
 引数として対象日（YYYY-MM-DD）を受け取る。省略時は今日の日付（`date +%Y-%m-%d`）を使う。
+日付から `{YYYY}`, `{MM}`, `{DD}` を導出する。
 
 ### 2. セッション記録の検索
 
@@ -29,6 +40,8 @@ VAULT=$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault
 find "$VAULT/Claude" -type f -name "${DATE}*.md"
 ```
 
+セッション記録が1件も見つからない場合は「対象日のセッション記録は見つかりませんでした」と報告して終了する。
+
 ### 3. ファイルの読み取りとグルーピング
 
 検出したファイルをすべて読み取り、ディレクトリ構造からプロジェクト別にグルーピングする。
@@ -37,20 +50,31 @@ find "$VAULT/Claude" -type f -name "${DATE}*.md"
 - `Claude/Code/{org}/{repo}/` → `{repo}`
 - `Claude/Chat/` → `Chat`
 
-### 4. 業務タグの付与
+#### 業務タグの付与
 
 以下に該当するプロジェクトには見出しに `[業務]` タグを付与する:
 - `a-kobori` ユーザー配下のリポジトリ
 - `spine-lab` 組織配下のリポジトリ
 
-### 5. サマリーの生成
+### 4. AIセッション.md の生成
 
-以下の形式でサマリーを生成する。`tmp/{DATE}.md` の形式を踏襲すること。
+出力先: `$VAULT/dailynote/{YYYY}/{MM}/{DD}/AIセッション.md`（create-or-replace）
+
+ディレクトリが存在しない場合は作成する。
+
+#### フォーマット
 
 ```markdown
-## 日次記録サマリー
+---
+tags:
+  - dailynote
+  - ai-session
+created: {DATE}
+---
 
-### 全体概要
+# AIセッション
+
+## 全体概要
 
 セッション数: N（業務系X件、個人開発Y件、ChatZ件）
 
@@ -93,29 +117,53 @@ find "$VAULT/Claude" -type f -name "${DATE}*.md"
 3. Chat は最後に表示
 4. 各グループ内ではセッション数が多い順
 
-### 6. dailynote への追記
+### 5. summary.md の生成
 
-対象の dailynote ファイル: `$VAULT/dailynote/{DATE}.md`
+出力先: `$VAULT/dailynote/{YYYY}/{MM}/{DD}/summary.md`（create-or-replace）
 
-- ファイルが存在しない場合: 以下のフォーマットで新規作成する
+#### データソース
+
+`$VAULT/dailynote/{YYYY}/{MM}/{DD}/` 配下の全 `.md` ファイルを読み込む。ただし `summary.md` 自身は除外する。
+
+存在しうるファイル:
+- `{DATE}.md` — Slack Activity Summary 等（存在しない場合もある）
+- `AIセッション.md` — Step 4 で生成したもの
+- `screenocr.md` — analyze-screen-ocr スキルが生成（存在しない場合もある）
+
+#### フォーマット
 
 ```markdown
 ---
 tags:
   - dailynote
+  - summary
 created: {DATE}
 ---
 
-## 日次記録サマリー
+# {DATE} デイリーサマリー
 
-（生成したサマリー）
+## 一日の概要
+（全ソースから3〜5文で要約。業務・個人開発・生活のバランス）
+
+## 業務ハイライト
+（Slack + AI業務セッションから主要成果を箇条書き）
+
+## 開発ハイライト
+（AI個人開発セッションから技術的成果を箇条書き）
+
+## 行動パターン
+（ScreenOCRデータがある場合のみ。操作時間・主要アプリ・集中時間帯）
+
+## 生産性スコア: N / 10
+（1行の根拠）
 ```
 
-- ファイルが存在する場合:
-  - `## 日次記録サマリー` セクションが存在しない → ファイル末尾に追記
-  - `## 日次記録サマリー` セクションが既に存在する → **既存の記載は一切改変しない**。既に記載済みのセッションを特定し、未記載のセッションのみを追加分としてセクション末尾（次の `## ` 見出しの直前）に挿入する。追加分がない場合は何もしない
+#### 条件分岐
 
-### 7. メモ候補の抽出と保存
+- `screenocr.md` が存在しない場合 → 「行動パターン」セクションを省略
+- `{DATE}.md`（Slack Activity Summary）がない場合 → 「業務ハイライト」はAIセッションのみから生成
+
+### 6. メモ候補の抽出と保存
 
 サマリー生成後、各セッション記録を横断的に読み直し、以下の観点で「技術記事やブログ、個人メモとして残す価値のあるテーマ」を抽出する:
 
@@ -173,13 +221,13 @@ tags:
 
 0件〜任意の数。無理に抽出しない。該当なしなら何も保存しない。
 
-### 8. 結果の報告
+### 7. 結果の報告
 
-追記した dailynote のパスと、収集したセッション数を報告する。メモを保存した場合はそのタイトルとパスも報告する。
+生成したファイルのパスと、収集したセッション数を報告する。メモを保存した場合はそのタイトルとパスも報告する。
 
 ## 制約
 
 - ファイルの内容を改変・解釈しない。記録されている事実をそのまま要約する
 - 感情や意図の推測はしない
 - 数値データ（テスト数、ビルド番号、スコアなど）は正確に転記する
-- セッション記録が1件も見つからない場合は、dailynote への追記は行わず「対象日のセッション記録は見つかりませんでした」と報告する
+- 既存の `{DATE}.md` は **絶対に改変しない**
