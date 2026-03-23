@@ -1,0 +1,13 @@
+{
+  "name": "obsidian-local",
+  "owner": {
+    "name": "koboriakira"
+  },
+  "plugins": [
+    {
+      "name": "obsidian-skills",
+      "source": "./",
+      "description": "Obsidian操作スキル集 (obsidian-cli, obsidian-bases, obsidian-classify, obsidian-project, para)"
+    }
+  ]
+}
