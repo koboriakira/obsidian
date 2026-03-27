@@ -1,5 +1,8 @@
 ---
 name: obsidian-bases
+level: L2
+kind: Knowledge
+scope: Project
 description: Obsidian Bases (.base ファイル) の作成・編集・管理を行う
 allowed-tools: Read, Write, Edit, Bash
 ---

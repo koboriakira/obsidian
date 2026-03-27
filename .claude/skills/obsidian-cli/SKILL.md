@@ -1,5 +1,8 @@
 ---
 name: obsidian-cli
+level: L1
+kind: Ops
+scope: Project
 description: >
   Obsidian Vault をローカル CLI (`obsidian` コマンド) で操作するときに使う。
   「Obsidianにノートを作って」「デイリーノートに追記して」「Vaultを検索して」

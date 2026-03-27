@@ -1,5 +1,8 @@
 ---
 name: obsidian-classify
+level: L1
+kind: Knowledge
+scope: Project
 description: Obsidian ノートの格納場所を PARA メソッドに基づいて判断・提案する
 allowed-tools: Read, Write, Bash
 ---

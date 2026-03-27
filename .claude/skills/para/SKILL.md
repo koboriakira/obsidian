@@ -1,5 +1,8 @@
 ---
 name: para
+level: L2
+kind: Knowledge
+scope: Project
 description: >
   Obsidian にメモ・ノートを格納するときは必ずこのスキルを参照すること。
   PARAメソッドに基づく格納先の判断・atomicノート原則・ノートのライフサイクルを定義する。
