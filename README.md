@@ -15,19 +15,25 @@ Obsidian Vault 管理用のスクリプト・Claude Code スキル集。
 
 ### 手順
 
-**1. マーケットプレイスを追加する**
+**1. リポジトリをクローンする**
 
 ```bash
-claude plugin marketplace add koboriakira/obsidian
+git clone https://github.com/koboriakira/obsidian
 ```
 
-**2. プラグインをインストールする**
+**2. ローカルパスをマーケットプレイスとして登録する**
+
+```bash
+claude plugin marketplace add ./obsidian
+```
+
+**3. プラグインをインストールする**
 
 ```bash
 claude plugin install obsidian-skills
 ```
 
-**3. 確認**
+**4. 確認**
 
 ```bash
 claude plugin list
@@ -36,7 +42,7 @@ claude plugin list
 ### アップデート
 
 ```bash
-claude plugin marketplace update obsidian-local
+git -C ./obsidian pull
 claude plugin update obsidian-skills
 ```
 

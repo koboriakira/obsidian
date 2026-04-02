@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "obsidian-skills",
-      "source": { "source": "github", "repo": "koboriakira/obsidian" },
+      "source": "./",
       "description": "Obsidian操作スキル集 (obsidian-cli, obsidian-bases, obsidian-classify, obsidian-project, para)"
     }
   ]
