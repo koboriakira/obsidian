@@ -1,56 +1,39 @@
 # obsidian
 
-Obsidian Vault 管理用のスクリプト・Claude Code スキル集。
+Obsidian Vault 管理用のスクリプト・Copilot CLI スキル集。
 
-## Claude Code プラグインのインストール
+## Copilot CLI プラグインのインストール
 
-このリポジトリは Claude Code のプラグインマーケットプレイスとして機能する。
-`obsidian-skills` プラグインをインストールすると、以下のスキルが使えるようになる。
+このリポジトリは Copilot CLI のプラグインとして1コマンドで導入できる。
+インストールすると、以下のスキルが使えるようになる。
 
 - `obsidian-cli` — Vault をローカル CLI で操作する
 - `obsidian-bases` — Bases ファイルの作成・編集
 - `obsidian-classify` — PARA メソッドに基づく格納先判断
 - `obsidian-project` — プロジェクトノートの作成・更新
 - `para` — PARAメソッドに基づくノート管理ルール
+- `ai-captured` — 一日の行動記録を作成する
+- `daily-note-summary` — デイリーノートにサマリーを追記する
+- `task-board` — タスクボードでタスク管理する
+- `tag-cleanup` — タグを整理・統合する
 
-### 手順
-
-**1. リポジトリをクローンする**
+### インストール（推奨）
 
 ```bash
-git clone https://github.com/koboriakira/obsidian
+copilot plugin install koboriakira/obsidian
 ```
 
-**2. ローカルパスをマーケットプレイスとして登録する**
+### 確認・更新・アンインストール
 
 ```bash
-claude plugin marketplace add ./obsidian
-```
+# インストール済みプラグイン一覧
+copilot plugin list
 
-**3. プラグインをインストールする**
+# 更新（リポジトリの最新を取得）
+copilot plugin update obsidian
 
-```bash
-claude plugin install obsidian-skills
-```
-
-**4. 確認**
-
-```bash
-claude plugin list
-```
-
-### アップデート
-
-```bash
-git -C ./obsidian pull
-claude plugin update obsidian-skills
-```
-
-### アンインストール
-
-```bash
-claude plugin uninstall obsidian-skills
-claude plugin marketplace remove obsidian-local
+# アンインストール
+copilot plugin uninstall obsidian
 ```
 
 ## scripts/

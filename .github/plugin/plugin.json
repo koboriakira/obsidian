@@ -1,0 +1,28 @@
+{
+  "name": "obsidian",
+  "description": "Obsidian Vault 管理スキル集。obsidian CLIを使ったVault操作、PARAメソッドに基づくノート整理、プロジェクト管理、タグ整理などを含みます。",
+  "version": "1.0.0",
+  "author": {
+    "name": "koboriakira"
+  },
+  "repository": "https://github.com/koboriakira/obsidian",
+  "license": "MIT",
+  "keywords": [
+    "obsidian",
+    "vault",
+    "para",
+    "note-taking",
+    "daily-note"
+  ],
+  "skills": [
+    "./.claude/skills/obsidian-cli",
+    "./.claude/skills/obsidian-bases",
+    "./.claude/skills/obsidian-classify",
+    "./.claude/skills/obsidian-project",
+    "./.claude/skills/para",
+    "./.claude/skills/ai-captured",
+    "./.claude/skills/daily-note-summary",
+    "./.claude/skills/task-board",
+    "./.claude/skills/tag-cleanup"
+  ]
+}
