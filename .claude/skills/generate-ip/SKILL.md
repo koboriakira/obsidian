@@ -52,7 +52,12 @@ VAULT="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault"
 
 ### Step 3: IPを生成する
 
-**保存先:** `30_Resources/IP/<タイトル>.md`
+**保存先の判断:**
+- 汎用知識（文脈を超えて再利用できる）→ `Wiki/<タイトル>.md`
+- 特定プロジェクトに紐づく知識 → `Projects/<PJ名>/<タイトル>.md`
+- 特定エリアに紐づく知識 → `Areas/<エリア名>/<タイトル>.md`
+
+迷ったら `Wiki/` に置く。
 
 ```markdown
 ---
@@ -82,11 +87,21 @@ UIDの生成:
 uuidgen | tr '[:upper:]' '[:lower:]'
 ```
 
-### Step 4: 完了報告
+### Step 4: ソースファイルの処理
+
+IPを生成した後、元のソースファイルを `Raws/` に移動する。
+
+```bash
+mv "$VAULT/<元の場所>/<ファイル名>" "$VAULT/Raws/<ファイル名>"
+```
+
+ソースが既にRaws/にある場合は移動不要。ソースを削除するかは **ユーザーに確認してから** 行う（デフォルトはRaws/に保全）。
+
+### Step 5: 完了報告
 
 - 生成したIPのタイトルとパスを報告する
 - 「このソースから他にIPが抽出できそう」な場合は提案する
-- ソースファイルを削除するかは **ユーザーに確認してから** 行う
+- ソースファイルの移動先を報告する
 
 ## IPを生成すべきでないケース
 
@@ -99,10 +114,24 @@ uuidgen | tr '[:upper:]' '[:lower:]'
 
 ## 既存IPとの重複チェック
 
-生成前に `30_Resources/IP/` の既存ファイルを確認する。
+生成前に `Wiki/` の既存ファイルを確認する。
 
 ```bash
-ls "$VAULT/30_Resources/IP/" 2>/dev/null
+ls "$VAULT/Wiki/" 2>/dev/null
 ```
 
 概念が重複する場合は新規生成せず、**既存IPの更新または統合**を提案する。
+
+## Vault ディレクトリ構造
+
+```
+Inbox/        ← 未処理
+Projects/     ← アクティブなプロジェクト
+Areas/        ← 継続的な責任
+Wiki/         ← IPのみ（蒸留済み汎用知識の倉庫）
+Raws/         ← IPの原材料（放置OK）
+```
+
+IPのtype以外に、関連するtypeは以下：
+- `type: document` — 特定の文脈に属する正式な文書（Projects/やAreas/に置く）
+- `type: raw` — 未整理の素材（Raws/に置く）
