@@ -152,6 +152,7 @@ def generate_task_file(fm: dict, body: str, target: date, task_dir: Path) -> Pat
 
     section = str(fm.get("section", ""))
     estimate = fm.get("estimate", 0)
+    start_time = str(fm.get("start_time", ""))
     mode = fm.get("mode", "ルーティン")
 
     task_fm = {
@@ -162,7 +163,7 @@ def generate_task_file(fm: dict, body: str, target: date, task_dir: Path) -> Pat
         "scheduled_date": date_str,
         "section": section,
         "estimate": estimate,
-        "start_time": "",
+        "start_time": start_time,
         "end_time": "",
         "mode": mode,
         "status": "todo",
