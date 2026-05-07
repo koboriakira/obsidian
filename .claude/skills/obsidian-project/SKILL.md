@@ -15,12 +15,13 @@ description: >
 
 ```
 10_Projects/<プロジェクト名>/
-├── _index.md   # エグゼクティブサマリー（常に先頭・常に最新化）
-├── tasks.md    # タスク一覧（タスクのみ）
-└── ...         # その他のノート（atomic に分割）
+├── _index.md        # エグゼクティブサマリー（常に先頭・常に最新化）
+├── tasks/           # タスクディレクトリ（1タスク1ファイル）
+│   └── <タスク名>.md
+└── ...              # その他のノート（atomic に分割）
 ```
 
-**プロジェクト開始時に必ず `_index.md` と `tasks.md` を作成する。**
+**プロジェクト開始時に必ず `_index.md` を作成する。タスクは `tasks/` ディレクトリに1ファイル1タスクで管理する（tasks.md は作成しない）。**
 
 `_index.md` はアンダースコアプレフィックスによりファイル一覧の先頭に表示される。
 
@@ -87,43 +88,49 @@ updated: YYYY-MM-DD
 
 ---
 
-## tasks.md — タスク一覧
+## tasks/ — タスクディレクトリ（1タスク1ファイル）
 
 ### 役割
 
-プロジェクトのタスクのみを管理する。メモ・調査結果・議事録は別ファイルに分ける。
+プロジェクトのタスクを1ファイル1タスクで管理する。TaskChuteテンプレートに準拠。
 
-### フォーマット
+### タスクファイルのフォーマット
+
+`tasks/<タスク名>.md` として作成する:
 
 ```markdown
 ---
-updated: YYYY-MM-DD
+uid: <uuid4>
+created: YYYY-MM-DDTHH:MM
+updated: YYYY-MM-DDTHH:MM
+tags: []
+scheduled_date: YYYY-MM-DD
+section: ""
+estimate: 0
+start_time: ""
+end_time: ""
+mode: ""
+status: todo
+is_routine: false
+mit: false
+cue: ""
 ---
 
-## 🚧 In Progress
+（タスクの詳細・背景）
 
-## 📋 Todo
+## サブタスク
 
-## 🚫 Blocked
-
-## ✅ Done
-
+- [ ] サブタスク名 (分数)
 ```
 
-### タスクの記法（/task-board スキル準拠）
+### ステータスの定義
 
-| ステータス | 記号 | セクション |
-|-----------|------|-----------|
-| 未着手 | `[ ]` | 📋 Todo |
-| 作業中 | `[/]` | 🚧 In Progress |
-| 完了 | `[x]` | ✅ Done |
-| ブロック中 | `[-]` | 🚫 Blocked |
-
-```markdown
-- [ ] タスク名 ➕ YYYY-MM-DD
-- [/] タスク名 🖥 koboriakira ➕ YYYY-MM-DD 🕐 HH:MM
-- [x] タスク名 🖥 koboriakira ➕ YYYY-MM-DD 🕐 HH:MM ✅ YYYY-MM-DD
-```
+| ステータス | 意味 |
+|-----------|------|
+| `todo` | 未着手 |
+| `in_progress` | 作業中 |
+| `done` | 完了 |
+| `cancelled` | キャンセル |
 
 ---
 
@@ -157,7 +164,7 @@ updated: YYYY-MM-DD
 10_Projects/FSデスク_集計自動化/   ← 独立したプロジェクトとして切り出す
 ```
 
-親プロジェクトとの関係は、`_index.md` や `tasks.md` 内の Obsidian リンクで表現する:
+親プロジェクトとの関係は、`_index.md` 内の Obsidian リンクで表現する:
 
 ```markdown
 ## 関連プロジェクト
@@ -208,10 +215,10 @@ obsidian search query="<キーワード>" path="00_Inbox"
 
 プロジェクトを完了・アーカイブするときは以下を順に実施する：
 
-- [ ] `tasks.md` の未完了タスクを確認し、引き継ぎ先を明示して完了にする
-  - 継続タスク → `20_Areas/<エリア名>/` または `00_Inbox/` に移動
-  - 不要なタスク → そのまま ✅ にしてクローズ理由をメモ
-- [ ] `tasks.md` の全タスクが完了状態になっていることを確認する
+- [ ] `tasks/` ディレクトリの未完了タスクを確認し、引き継ぎ先を明示して完了にする
+  - 継続タスク → `20_Areas/<エリア名>/tasks/` または `00_Inbox/` に移動
+  - 不要なタスク → status: cancelled にしてクローズ理由をメモ
+- [ ] `tasks/` の全タスクが done または cancelled になっていることを確認する
 - [ ] `_index.md` のステータスを `completed` に更新し、完了条件に ✅ を入れる
 - [ ] プロジェクトフォルダ内の IP（中間・最終成果物）を見直し、`30_Resources/` や `20_Areas/` に移動する
 - [ ] プロジェクトフォルダを `40_Archives/` へ移動する
@@ -224,9 +231,10 @@ obsidian search query="<キーワード>" path="00_Inbox"
 ### 新規プロジェクト作成
 
 ```bash
-# フォルダ作成
+# _index.md を作成（tasks/ ディレクトリは最初のタスク作成時に自動生成される）
 obsidian create path="10_Projects/<プロジェクト名>/_index.md" content="..."
-obsidian create path="10_Projects/<プロジェクト名>/tasks.md" content="..."
+# タスクを作成
+obsidian create path="10_Projects/<プロジェクト名>/tasks/<タスク名>.md" content="..."
 ```
 
 フォルダが存在しない場合は自動作成される。
@@ -238,9 +246,9 @@ obsidian read path="10_Projects/<プロジェクト名>/_index.md"
 # 内容を確認して Write ツールで更新
 ```
 
-### tasks.md へのタスク追加
+### タスクの追加
 
 ```bash
-obsidian read path="10_Projects/<プロジェクト名>/tasks.md"
-# 該当セクションにタスクを追記
+# 新規タスクファイルを作成
+obsidian create path="10_Projects/<プロジェクト名>/tasks/<タスク名>.md" content="..."
 ```
