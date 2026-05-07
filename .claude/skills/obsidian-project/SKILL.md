@@ -100,6 +100,7 @@ updated: YYYY-MM-DD
 
 ```markdown
 ---
+type: task
 uid: <uuid4>
 created: YYYY-MM-DDTHH:MM
 updated: YYYY-MM-DDTHH:MM
