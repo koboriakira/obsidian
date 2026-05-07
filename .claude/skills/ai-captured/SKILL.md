@@ -42,9 +42,24 @@ ls "$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault/dailyno
 |---------|------|
 | `screenocr.md` | 時間帯ごとのアプリ・操作記録（最も詳細な時系列情報） |
 | `AIセッション.md` | Claude Code セッションの概要と成果 |
-| `donelist.md` | 予定・完了タスクリスト |
-| `Slackサマリー.md` | Slack での発言・アウトプットのサマリー |
+| `tasks/` (横断) | 当日（scheduled_date = 対象日）のタスク。dailynote/YYYY/MM/DD/tasks/・Projects/*/tasks/・Areas/*/tasks/・Inbox/ を横断して status: done / in_progress のものを取得 |
+| `arika-session.md` | Arikaとのセッション作業記録。意思決定・実装内容・ルーティン変更などArika経由の作業が記録されている。screenocrで拾えない作業の補完に使う |
+| `Slackサマリー.md` | Slack での発言・アウトプットのサマリー（**存在する場合のみ**） |
 | `task-board.md` | 当日着手・完了タスクの一覧（Vault 直下） |
+
+`tasks/` 横断取得コマンド例：
+
+```bash
+VAULT="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault"
+TARGET_DATE="YYYY-MM-DD"
+# scheduled_date が対象日 かつ status が done/in_progress のタスクを横断取得
+grep -rl "scheduled_date: ${TARGET_DATE}" \
+  "${VAULT}/dailynote/${YYYY}/${MM}/${DD}/tasks/" \
+  "${VAULT}/Projects" \
+  "${VAULT}/Areas" \
+  "${VAULT}/Inbox" 2>/dev/null \
+| xargs grep -l "status: done\|status: in_progress" 2>/dev/null
+```
 
 これらを**並行して**読み込む。
 
