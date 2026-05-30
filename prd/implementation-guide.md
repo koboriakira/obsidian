@@ -71,7 +71,8 @@ dev = [
 
 ## MCP サーバーの実装方針
 
-[FastMCP](https://github.com/jlowin/fastmcp) または `mcp` SDK の `Server` クラスを使用する。
+**FastMCP**（`mcp[cli]` に同梱）を使用する。
+低レベルの `mcp.Server` は今回のスコープ（HTTP で5ツールを公開するだけ）では不要。
 
 ### server.py の骨格
 
@@ -161,8 +162,12 @@ chore: create/update {path} via obsidian-mcp
 web: uvicorn obsidian_mcp.server:app --host 0.0.0.0 --port $PORT
 ```
 
-FastMCP が FastAPI インスタンスを返す場合は `mcp.get_asgi_app()` 等で取得する。
-詳細は実装時に SDK のドキュメントを参照すること。
+FastMCP は `mcp.streamable_http_app()` で ASGI アプリを取得できる。
+起動コマンドは `uvicorn obsidian_mcp.server:app` の形にするため、`server.py` 内で以下のように定義する:
+
+```python
+app = mcp.streamable_http_app()
+```
 
 ### render.yaml（Blueprint）
 
@@ -232,8 +237,16 @@ GitHub API への実 HTTP リクエストは Integration テスト扱いとし�
 6. Render デプロイ・疎通確認
 7. Claude Code の `.mcp.json` に追加して動作確認
 
+## 確定事項まとめ
+
+| 項目 | 決定内容 |
+|------|----------|
+| MCP 実装 | FastMCP（`mcp[cli]` 同梱） |
+| Transport | Streamable HTTP |
+| Vault アクセス | GitHub Contents API（非公開リポジトリ） |
+| Vault リポジトリ | 新規プライベートリポジトリ（別途作成） |
+
 ## 未解決事項（実装時に決定）
 
-- FastMCP と低レベル `mcp.Server` のどちらを使うか（FastMCP が安定していれば推奨）
-- `mcp.run(transport="streamable-http")` と FastAPI の統合方法（SDK バージョンによって異なる）
-- Vault リポジトリを専用リポジトリにするか、既存の Vault リポジトリを使うか
+- `mcp.streamable_http_app()` の正確な API（SDK バージョンによって変わる可能性あり）
+- Vault リポジトリ名（`my-vault` 等）
