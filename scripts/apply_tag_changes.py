@@ -20,7 +20,7 @@ import argparse
 import re
 from pathlib import Path
 
-VAULT = Path.home() / "Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault"
+VAULT = Path.home() / "obsidian/my-vault"
 EXCLUDE_DIRS = {".obsidian", ".trash"}
 
 

@@ -21,7 +21,7 @@ allowed-tools: Read, Write, Bash
 引数で受け取ったパスまたはノート名でファイルを読む。
 
 ```bash
-VAULT="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault"
+VAULT="$HOME/obsidian/my-vault"
 ```
 
 ファイルが見つからない場合は、Vault全体をファイル名で検索して候補を提示する。

@@ -28,7 +28,7 @@ allowed-tools: Read, Write, Bash
 引数で直接指定されるか、テーマ指定の場合は Wiki/ から関連IPを検索する。
 
 ```bash
-VAULT="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault"
+VAULT="$HOME/obsidian/my-vault"
 ls "$VAULT/Wiki/" | grep -i "<テーマ>"
 ```
 

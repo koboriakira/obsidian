@@ -250,7 +250,7 @@ tags: []
 ## Vault パス
 
 ```
-$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault
+$HOME/obsidian/my-vault
 ```
 
 ## 注意事項

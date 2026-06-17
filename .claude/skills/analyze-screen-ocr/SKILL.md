@@ -13,7 +13,7 @@ allowed-tools: Read, Glob, Edit, Write, Bash
 ## コンテキスト
 
 - ホームディレクトリ: !`echo $HOME`
-- Vaultパス: !`echo ${OBSIDIAN_VAULT_PATH:-$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault}`
+- Vaultパス: !`echo ${OBSIDIAN_VAULT_PATH:-$HOME/obsidian/my-vault}`
 - 現在日時: !`date '+%Y-%m-%d %H:%M'`
 - 1時間前の日時: !`date -v-1H '+%Y-%m-%d %H:%M'`
 

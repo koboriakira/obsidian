@@ -85,7 +85,7 @@ python3 ~/git/obsidian/scripts/generate_tag_index.py
 ## Vault パス
 
 ```
-$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault
+$HOME/obsidian/my-vault
 ```
 
 ## 注意事項

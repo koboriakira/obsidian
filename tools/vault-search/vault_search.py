@@ -21,7 +21,7 @@ import numpy as np
 
 # ----- 定数 -----
 
-VAULT_PATH = Path.home() / "Library" / "Mobile Documents" / "iCloud~md~obsidian" / "Documents" / "my-vault"
+VAULT_PATH = Path.home() / "obsidian" / "my-vault"
 DB_DIR = Path.home() / ".local" / "share" / "vault-search"
 DB_PATH = DB_DIR / "vault.db"
 TARGET_DIRS = ["Wiki", "Areas", "Projects", "Inbox", "Raws"]

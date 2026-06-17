@@ -12,7 +12,7 @@ Obsidian Vault から指定日のセッション記録を収集し、プロジ�
 ## Vault パス
 
 ```
-VAULT=$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault
+VAULT=$HOME/obsidian/my-vault
 ```
 
 ## ディレクトリ構造
