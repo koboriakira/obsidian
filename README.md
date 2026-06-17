@@ -45,3 +45,10 @@ Vault 管理用の Python スクリプト群。
 | `generate_tag_index.py` | タグ一覧を生成する |
 | `apply_tag_changes.py` | タグの一括変更を適用する |
 | `archive_old_tasks.py` | 古いタスクをアーカイブする |
+
+## tools/
+
+| ディレクトリ | 内容 |
+|--------------|------|
+| `vault-search` | Vault のハイブリッド検索 CLI |
+| `vault-mcp` | Claude Desktop 用 MCP サーバ（Vault の読み取り・新規作成） |
