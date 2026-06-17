@@ -152,10 +152,12 @@ def generate_task_file(fm: dict, body: str, target: date, task_dir: Path) -> Pat
 
     section = str(fm.get("section", ""))
     estimate = fm.get("estimate", 0)
-    start_time = str(fm.get("start_time", ""))
+    start_time = fm.get("start_time", "")
     mode = fm.get("mode", "ルーティン")
+    cue = str(fm.get("cue", ""))
 
     task_fm = {
+        "type": "task",
         "uid": str(uuid.uuid4()),
         "created": now_str,
         "updated": now_str,
@@ -165,9 +167,13 @@ def generate_task_file(fm: dict, body: str, target: date, task_dir: Path) -> Pat
         "estimate": estimate,
         "start_time": start_time,
         "end_time": "",
+        "actual_start_time": "",
+        "actual_end_time": "",
         "mode": mode,
         "status": "todo",
         "is_routine": True,
+        "mit": False,
+        "cue": cue,
     }
 
     lines = ["---"]
