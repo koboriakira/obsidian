@@ -16,7 +16,7 @@ Obsidian Tasks プラグインの記法に準拠する。
 ## ファイルパス
 
 ```
-$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault/Claude/task-board.md
+$HOME/obsidian/my-vault/Claude/task-board.md
 ```
 
 ## タスクの確認（任意のタイミングで実行）

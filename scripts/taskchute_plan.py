@@ -24,7 +24,7 @@ from pathlib import Path
 
 import yaml
 
-VAULT = Path("/Users/koboriakira/Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault")
+VAULT = Path("/Users/koboriakira/obsidian/my-vault")
 PROJECTS_DIR = VAULT / "Projects"
 AREAS_DIR = VAULT / "Areas"
 DAILYNOTE_DIR = VAULT / "dailynote"

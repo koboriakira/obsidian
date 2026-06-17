@@ -37,7 +37,7 @@ allowed-tools: Read, Write, Bash
 Wiki/ および Projects/ Areas/ から関連IPを収集する。
 
 ```bash
-VAULT="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault"
+VAULT="$HOME/obsidian/my-vault"
 # タグで検索
 grep -rl "tags:" "$VAULT/Wiki/" | xargs grep -l "<関連タグ>"
 # conceptで検索

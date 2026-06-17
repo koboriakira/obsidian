@@ -17,7 +17,7 @@ dailynote の各種ファイルを読み込み、時系列でまとめた行動�
 ## Vault パス
 
 ```
-$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault
+$HOME/obsidian/my-vault
 ```
 
 ## 出力ファイル
@@ -33,7 +33,7 @@ dailynote/YYYY/MM/DD/ai-captured.md
 対象ディレクトリのファイルを確認する（`summary.md` は除外）。
 
 ```bash
-ls "$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault/dailynote/YYYY/MM/DD/"
+ls "$HOME/obsidian/my-vault/dailynote/YYYY/MM/DD/"
 ```
 
 読み込み優先度：
@@ -50,7 +50,7 @@ ls "$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault/dailyno
 `tasks/` 横断取得コマンド例：
 
 ```bash
-VAULT="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault"
+VAULT="$HOME/obsidian/my-vault"
 TARGET_DATE="YYYY-MM-DD"
 # scheduled_date が対象日 かつ status が done/in_progress のタスクを横断取得
 grep -rl "scheduled_date: ${TARGET_DATE}" \
@@ -65,7 +65,7 @@ grep -rl "scheduled_date: ${TARGET_DATE}" \
 
 タスクボードは以下のパスにある：
 ```
-$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault/Claude/task-board.md
+$HOME/obsidian/my-vault/Claude/task-board.md
 ```
 当日付け（`➕ YYYY-MM-DD`）のタスクを抽出する。
 

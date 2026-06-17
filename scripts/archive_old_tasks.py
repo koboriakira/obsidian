@@ -22,7 +22,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from pathlib import Path
 
-VAULT = Path.home() / "Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault"
+VAULT = Path.home() / "obsidian/my-vault"
 TASK_BOARD = VAULT / "Claude/task-board.md"
 ARCHIVE_DIR = VAULT / "Claude/task-board-archive"
 THRESHOLD_DAYS = 7

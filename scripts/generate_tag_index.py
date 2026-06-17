@@ -10,7 +10,7 @@ import re
 from collections import Counter
 from pathlib import Path
 
-VAULT = Path.home() / "Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault"
+VAULT = Path.home() / "obsidian/my-vault"
 OUTPUT = VAULT / "_tag_index.md"
 
 # 除外ディレクトリ（Obsidian の内部フォルダ）

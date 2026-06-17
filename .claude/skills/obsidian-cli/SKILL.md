@@ -19,7 +19,7 @@ description: >
 
 - Obsidian 1.12.x（早期アクセス版）以上
 - Settings → General → Command line interface を有効化済み
-- Vault パス: `$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault`
+- Vault パス: `$HOME/obsidian/my-vault`
 
 ## 基本構文
 
@@ -171,7 +171,7 @@ obsidian open file="ノート名"
 Vault ディレクトリへの直接ファイル操作にフォールバックする。
 
 ```bash
-VAULT="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/my-vault"
+VAULT="$HOME/obsidian/my-vault"
 # 例: デイリーノートに追記
 echo "追記内容" >> "$VAULT/dailynote/$(date +%Y-%m-%d).md"
 ```
