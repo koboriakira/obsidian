@@ -156,6 +156,19 @@ def _get_model():
     return _model
 
 
+# ----- リランカー -----
+
+_reranker = None
+
+
+def _get_reranker():
+    global _reranker
+    if _reranker is None:
+        from sentence_transformers import CrossEncoder
+        _reranker = CrossEncoder("BAAI/bge-reranker-v2-m3")
+    return _reranker
+
+
 def _get_embedding(text: str) -> bytes:
     model = _get_model()
     vec = model.encode(text, normalize_embeddings=True)
@@ -409,7 +422,8 @@ def index():
 @cli.command()
 @click.argument("query")
 @click.option("--limit", default=5, help="表示する結果数")
-def search(query: str, limit: int):
+@click.option("--no-rerank", "no_rerank", is_flag=True, help="リランクをスキップ")
+def search(query: str, limit: int, no_rerank: bool):
     """クエリテキストでハイブリッド検索する"""
     conn = _get_conn()
 
@@ -481,19 +495,34 @@ def search(query: str, limit: int):
         conn.close()
         return
 
-    # 結果を取得
+    # RRF 上位20件を取得
+    top20_ids = sorted(rrf_scores, key=lambda x: rrf_scores[x], reverse=True)[:20]
+
     rows_info = conn.execute(
-        f"SELECT id, file_path, file_name, type, concept, tags, chunk_text FROM vault_notes WHERE id IN ({','.join('?' * len(rrf_scores))})",
-        list(rrf_scores.keys()),
+        f"SELECT id, file_path, file_name, type, concept, tags, chunk_text FROM vault_notes WHERE id IN ({','.join('?' * len(top20_ids))})",
+        top20_ids,
     ).fetchall()
     info_map = {r[0]: r for r in rows_info}
 
+    # リランク処理
+    if not no_rerank:
+        try:
+            reranker = _get_reranker()
+            pairs = [(query, info_map[row_id][6]) for row_id in top20_ids if row_id in info_map]
+            valid_ids = [row_id for row_id in top20_ids if row_id in info_map]
+            rerank_scores = reranker.predict(pairs)
+            scored_ids = sorted(zip(valid_ids, rerank_scores), key=lambda x: x[1], reverse=True)
+            final_order = [(float(score), info_map[row_id]) for row_id, score in scored_ids]
+        except Exception as e:
+            click.echo(f"リランクをスキップ（エラー: {e}）", err=True)
+            no_rerank = True
+
+    if no_rerank:
+        final_order = [(rrf_scores[row_id], info_map[row_id]) for row_id in top20_ids if row_id in info_map]
+
     # チャンク単位スコアを file_path でデデュプ（最高スコアのチャンクで代表）
     best_by_path: dict[str, tuple[float, tuple]] = {}
-    for row_id, score in rrf_scores.items():
-        if row_id not in info_map:
-            continue
-        r = info_map[row_id]
+    for score, r in final_order:
         file_path = r[1]
         if file_path not in best_by_path or score > best_by_path[file_path][0]:
             best_by_path[file_path] = (score, r)
