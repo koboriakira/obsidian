@@ -8,6 +8,7 @@ vault-search: Obsidian Vault のハイブリッド検索 CLI
   vault-search status    # DB の状態を表示
 """
 
+import hashlib
 import os
 import re
 import json
@@ -25,7 +26,8 @@ VAULT_PATH = Path.home() / "obsidian" / "my-vault"
 DB_DIR = Path.home() / ".local" / "share" / "vault-search"
 DB_PATH = DB_DIR / "vault.db"
 TARGET_DIRS = ["Wiki", "Areas", "Projects", "Inbox", "Raws"]
-CHUNK_BODY_LIMIT = 300
+CHUNK_SIZE = 400
+CHUNK_OVERLAP = 50
 
 
 # ----- DB 初期化 -----
@@ -48,17 +50,25 @@ def _get_conn() -> sqlite3.Connection:
 
 
 def _init_schema(conn: sqlite3.Connection):
+    # chunk_index カラムが存在しない既存DBへのマイグレーション
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(vault_notes)").fetchall()]
+    if cols and "chunk_index" not in cols:
+        _migrate_add_chunk_index(conn)
+
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS vault_notes (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_path   TEXT NOT NULL UNIQUE,
+            file_path   TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL DEFAULT 0,
             file_name   TEXT NOT NULL,
             type        TEXT,
             concept     TEXT,
             tags        TEXT,
             chunk_text  TEXT NOT NULL,
+            file_hash   TEXT,
             embedding   BLOB,
-            updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(file_path, chunk_index)
         );
 
         CREATE VIRTUAL TABLE IF NOT EXISTS vault_notes_fts USING fts5(
@@ -98,6 +108,38 @@ def _init_schema(conn: sqlite3.Connection):
     except Exception:
         pass
 
+    conn.commit()
+
+
+def _migrate_add_chunk_index(conn: sqlite3.Connection):
+    """既存DBに chunk_index カラムを追加し、UNIQUE制約を張り直す"""
+    conn.executescript("""
+        ALTER TABLE vault_notes ADD COLUMN chunk_index INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE vault_notes ADD COLUMN file_hash TEXT;
+    """)
+    # 既存 UNIQUE(file_path) 制約をリネームで解消するため、テーブルを再作成
+    conn.executescript("""
+        CREATE TABLE vault_notes_new (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_path   TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL DEFAULT 0,
+            file_name   TEXT NOT NULL,
+            type        TEXT,
+            concept     TEXT,
+            tags        TEXT,
+            chunk_text  TEXT NOT NULL,
+            file_hash   TEXT,
+            embedding   BLOB,
+            updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(file_path, chunk_index)
+        );
+        INSERT INTO vault_notes_new
+            (id, file_path, chunk_index, file_name, type, concept, tags, chunk_text, file_hash, embedding, updated_at)
+        SELECT id, file_path, 0, file_name, type, concept, tags, chunk_text, file_hash, embedding, updated_at
+        FROM vault_notes;
+        DROP TABLE vault_notes;
+        ALTER TABLE vault_notes_new RENAME TO vault_notes;
+    """)
     conn.commit()
 
 
@@ -151,8 +193,8 @@ def _parse_frontmatter(content: str) -> tuple[dict, str]:
     return meta, body
 
 
-def _build_chunk_text(file_name: str, meta: dict, body: str) -> str:
-    """検索用チャンクテキストを構築する"""
+def _build_meta_prefix(file_name: str, meta: dict) -> str:
+    """チャンクに付与するメタデータプレフィックスを生成する"""
     parts = [file_name]
 
     for key in ("type", "concept", "purpose"):
@@ -174,11 +216,70 @@ def _build_chunk_text(file_name: str, meta: dict, body: str) -> str:
         else:
             parts.append(f"sources: {sources}")
 
-    body_trimmed = body.strip()[:CHUNK_BODY_LIMIT]
-    if body_trimmed:
-        parts.append(body_trimmed)
-
     return "\n".join(parts)
+
+
+def _split_into_chunks(file_name: str, meta: dict, body: str) -> list[str]:
+    """本文を複数チャンクに分割してメタプレフィックス付きのリストを返す"""
+    prefix = _build_meta_prefix(file_name, meta)
+    text = body.strip()
+
+    if len(text) <= CHUNK_SIZE:
+        chunk = f"{prefix}\n{text}" if text else prefix
+        return [chunk]
+
+    # 段落→改行→句点の順で再帰的に分割
+    raw_chunks = _recursive_split(text, CHUNK_SIZE, ["\n\n", "\n", "。"])
+
+    result = []
+    for i, chunk in enumerate(raw_chunks):
+        if i > 0 and CHUNK_OVERLAP > 0:
+            # 前チャンクの末尾50文字をオーバーラップとして先頭に付与
+            overlap = raw_chunks[i - 1][-CHUNK_OVERLAP:]
+            chunk = overlap + chunk
+        result.append(f"{prefix}\n{chunk}")
+
+    return result
+
+
+def _recursive_split(text: str, size: int, separators: list[str]) -> list[str]:
+    """指定サイズを超えないようにセパレータ優先度順で再帰分割する"""
+    if len(text) <= size:
+        return [text]
+
+    sep = separators[0] if separators else ""
+    next_seps = separators[1:]
+
+    if not sep:
+        # 最後の手段: 強制文字数カット
+        return [text[i:i + size] for i in range(0, len(text), size)]
+
+    parts = text.split(sep)
+    chunks: list[str] = []
+    current = ""
+
+    for part in parts:
+        candidate = current + sep + part if current else part
+        if len(candidate) <= size:
+            current = candidate
+        else:
+            if current:
+                chunks.append(current)
+            # part 自体がサイズ超の場合は次のセパレータで再分割
+            if len(part) > size and next_seps:
+                chunks.extend(_recursive_split(part, size, next_seps))
+                current = ""
+            else:
+                current = part
+
+    if current:
+        chunks.append(current)
+
+    return chunks if chunks else [text]
+
+
+def _file_hash(content: str) -> str:
+    return hashlib.md5(content.encode("utf-8")).hexdigest()
 
 
 # ----- Vault 走査 -----
@@ -214,7 +315,7 @@ def index():
 
     indexed = 0
     errors = 0
-    vault_paths = set()
+    vault_paths: set[str] = set()
 
     for rel_path, abs_path in files:
         vault_paths.add(rel_path)
@@ -225,54 +326,48 @@ def index():
             errors += 1
             continue
 
+        content_hash = _file_hash(content)
+
+        # ファイルハッシュで変更チェック（いずれかのチャンクで確認）
+        existing_hash = conn.execute(
+            "SELECT file_hash FROM vault_notes WHERE file_path = ? AND chunk_index = 0",
+            (rel_path,),
+        ).fetchone()
+
+        if existing_hash and existing_hash[0] == content_hash:
+            continue
+
         meta, body = _parse_frontmatter(content)
         file_name = Path(rel_path).stem
-        chunk_text = _build_chunk_text(file_name, meta, body)
+        chunks = _split_into_chunks(file_name, meta, body)
 
         tags_json = json.dumps(meta.get("tags", []), ensure_ascii=False) if meta.get("tags") else None
         note_type = meta.get("type")
         concept = meta.get("concept")
 
-        # 既存エントリの確認
-        existing = conn.execute(
-            "SELECT id, chunk_text FROM vault_notes WHERE file_path = ?",
+        # 既存チャンクを全削除してから再挿入
+        existing_ids = conn.execute(
+            "SELECT id FROM vault_notes WHERE file_path = ?",
             (rel_path,),
-        ).fetchone()
+        ).fetchall()
+        for (eid,) in existing_ids:
+            try:
+                conn.execute("DELETE FROM vec_vault_notes WHERE rowid = ?", (eid,))
+            except Exception:
+                pass
+        conn.execute("DELETE FROM vault_notes WHERE file_path = ?", (rel_path,))
 
-        if existing and existing[1] == chunk_text:
-            # 変更なし
-            continue
+        for chunk_index, chunk_text in enumerate(chunks):
+            try:
+                embedding = _get_embedding(chunk_text)
+            except Exception as e:
+                click.echo(f"  埋め込みエラー: {rel_path}[{chunk_index}]: {e}", err=True)
+                embedding = None
 
-        try:
-            embedding = _get_embedding(chunk_text)
-        except Exception as e:
-            click.echo(f"  埋め込みエラー: {rel_path}: {e}", err=True)
-            embedding = None
-
-        if existing:
-            # 更新
-            row_id = existing[0]
-            conn.execute(
-                """UPDATE vault_notes
-                   SET file_name=?, type=?, concept=?, tags=?, chunk_text=?, embedding=?, updated_at=CURRENT_TIMESTAMP
-                   WHERE id=?""",
-                (file_name, note_type, concept, tags_json, chunk_text, embedding, row_id),
-            )
-            if embedding is not None:
-                try:
-                    conn.execute("DELETE FROM vec_vault_notes WHERE rowid = ?", (row_id,))
-                    conn.execute(
-                        "INSERT INTO vec_vault_notes(rowid, embedding) VALUES (?, ?)",
-                        (row_id, embedding),
-                    )
-                except Exception:
-                    pass
-        else:
-            # 新規挿入
             cursor = conn.execute(
-                """INSERT INTO vault_notes (file_path, file_name, type, concept, tags, chunk_text, embedding)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (rel_path, file_name, note_type, concept, tags_json, chunk_text, embedding),
+                """INSERT INTO vault_notes (file_path, chunk_index, file_name, type, concept, tags, chunk_text, file_hash, embedding)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (rel_path, chunk_index, file_name, note_type, concept, tags_json, chunk_text, content_hash, embedding),
             )
             row_id = cursor.lastrowid
             if embedding is not None:
@@ -292,18 +387,18 @@ def index():
     conn.commit()
 
     # DB に存在するが Vault から消えたファイルを削除
-    db_paths = conn.execute("SELECT file_path FROM vault_notes").fetchall()
+    db_paths = conn.execute("SELECT DISTINCT file_path FROM vault_notes").fetchall()
     deleted = 0
     for (db_path,) in db_paths:
         if db_path not in vault_paths:
-            row = conn.execute("SELECT id FROM vault_notes WHERE file_path = ?", (db_path,)).fetchone()
-            if row:
+            rows = conn.execute("SELECT id FROM vault_notes WHERE file_path = ?", (db_path,)).fetchall()
+            for (rid,) in rows:
                 try:
-                    conn.execute("DELETE FROM vec_vault_notes WHERE rowid = ?", (row[0],))
+                    conn.execute("DELETE FROM vec_vault_notes WHERE rowid = ?", (rid,))
                 except Exception:
                     pass
-                conn.execute("DELETE FROM vault_notes WHERE id = ?", (row[0],))
-                deleted += 1
+            conn.execute("DELETE FROM vault_notes WHERE file_path = ?", (db_path,))
+            deleted += 1
 
     conn.commit()
     conn.close()
@@ -393,12 +488,17 @@ def search(query: str, limit: int):
     ).fetchall()
     info_map = {r[0]: r for r in rows_info}
 
-    final_scores: list[tuple[float, tuple]] = []
+    # チャンク単位スコアを file_path でデデュプ（最高スコアのチャンクで代表）
+    best_by_path: dict[str, tuple[float, tuple]] = {}
     for row_id, score in rrf_scores.items():
-        if row_id in info_map:
-            final_scores.append((score, info_map[row_id]))
+        if row_id not in info_map:
+            continue
+        r = info_map[row_id]
+        file_path = r[1]
+        if file_path not in best_by_path or score > best_by_path[file_path][0]:
+            best_by_path[file_path] = (score, r)
 
-    final_scores.sort(key=lambda x: x[0], reverse=True)
+    final_scores = sorted(best_by_path.values(), key=lambda x: x[0], reverse=True)
 
     click.echo(f"\n## 「{query}」の検索結果（上位 {min(limit, len(final_scores))} 件）\n")
 
@@ -427,10 +527,11 @@ def status():
 
     conn = _get_conn()
 
-    total = conn.execute("SELECT COUNT(*) FROM vault_notes").fetchone()[0]
+    total_chunks = conn.execute("SELECT COUNT(*) FROM vault_notes").fetchone()[0]
+    total_notes = conn.execute("SELECT COUNT(DISTINCT file_path) FROM vault_notes").fetchone()[0]
     with_embedding = conn.execute("SELECT COUNT(*) FROM vault_notes WHERE embedding IS NOT NULL").fetchone()[0]
     types = conn.execute(
-        "SELECT type, COUNT(*) FROM vault_notes GROUP BY type ORDER BY COUNT(*) DESC"
+        "SELECT type, COUNT(DISTINCT file_path) FROM vault_notes GROUP BY type ORDER BY COUNT(DISTINCT file_path) DESC"
     ).fetchall()
     oldest = conn.execute("SELECT MIN(updated_at) FROM vault_notes").fetchone()[0]
     newest = conn.execute("SELECT MAX(updated_at) FROM vault_notes").fetchone()[0]
@@ -440,7 +541,8 @@ def status():
     click.echo(f"\n## vault-search ステータス\n")
     click.echo(f"- DB パス: {DB_PATH}")
     click.echo(f"- Vault パス: {VAULT_PATH}")
-    click.echo(f"- 総ノート数: {total}")
+    click.echo(f"- 総ノート数: {total_notes}")
+    click.echo(f"- 総チャンク数: {total_chunks}")
     click.echo(f"- 埋め込み済み: {with_embedding}")
     click.echo(f"- 最古の更新: {oldest or 'なし'}")
     click.echo(f"- 最新の更新: {newest or 'なし'}")
