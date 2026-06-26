@@ -55,47 +55,53 @@ def _init_schema(conn: sqlite3.Connection):
     if cols and "chunk_index" not in cols:
         _migrate_add_chunk_index(conn)
 
+    # tokenized_text カラムが存在しない既存DBへのマイグレーション
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(vault_notes)").fetchall()]
+    if cols and "tokenized_text" not in cols:
+        _migrate_add_tokenized_text(conn)
+
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS vault_notes (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_path   TEXT NOT NULL,
-            chunk_index INTEGER NOT NULL DEFAULT 0,
-            file_name   TEXT NOT NULL,
-            type        TEXT,
-            concept     TEXT,
-            tags        TEXT,
-            chunk_text  TEXT NOT NULL,
-            file_hash   TEXT,
-            embedding   BLOB,
-            updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_path       TEXT NOT NULL,
+            chunk_index     INTEGER NOT NULL DEFAULT 0,
+            file_name       TEXT NOT NULL,
+            type            TEXT,
+            concept         TEXT,
+            tags            TEXT,
+            chunk_text      TEXT NOT NULL,
+            tokenized_text  TEXT,
+            file_hash       TEXT,
+            embedding       BLOB,
+            updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(file_path, chunk_index)
         );
 
         CREATE VIRTUAL TABLE IF NOT EXISTS vault_notes_fts USING fts5(
-            chunk_text,
+            tokenized_text,
             content=vault_notes,
             content_rowid=id,
-            tokenize='trigram'
+            tokenize='unicode61'
         );
 
         CREATE TRIGGER IF NOT EXISTS vault_notes_ai
         AFTER INSERT ON vault_notes BEGIN
-            INSERT INTO vault_notes_fts(rowid, chunk_text)
-            VALUES (new.id, new.chunk_text);
+            INSERT INTO vault_notes_fts(rowid, tokenized_text)
+            VALUES (new.id, new.tokenized_text);
         END;
 
         CREATE TRIGGER IF NOT EXISTS vault_notes_ad
         AFTER DELETE ON vault_notes BEGIN
-            INSERT INTO vault_notes_fts(vault_notes_fts, rowid, chunk_text)
-            VALUES ('delete', old.id, old.chunk_text);
+            INSERT INTO vault_notes_fts(vault_notes_fts, rowid, tokenized_text)
+            VALUES ('delete', old.id, old.tokenized_text);
         END;
 
         CREATE TRIGGER IF NOT EXISTS vault_notes_au
         AFTER UPDATE ON vault_notes BEGIN
-            INSERT INTO vault_notes_fts(vault_notes_fts, rowid, chunk_text)
-            VALUES ('delete', old.id, old.chunk_text);
-            INSERT INTO vault_notes_fts(rowid, chunk_text)
-            VALUES (new.id, new.chunk_text);
+            INSERT INTO vault_notes_fts(vault_notes_fts, rowid, tokenized_text)
+            VALUES ('delete', old.id, old.tokenized_text);
+            INSERT INTO vault_notes_fts(rowid, tokenized_text)
+            VALUES (new.id, new.tokenized_text);
         END;
     """)
 
@@ -141,6 +147,50 @@ def _migrate_add_chunk_index(conn: sqlite3.Connection):
         ALTER TABLE vault_notes_new RENAME TO vault_notes;
     """)
     conn.commit()
+
+
+def _migrate_add_tokenized_text(conn: sqlite3.Connection):
+    """既存DBに tokenized_text カラムを追加し、FTS5テーブルをMeCab対応版に再作成する"""
+    conn.execute("ALTER TABLE vault_notes ADD COLUMN tokenized_text TEXT")
+    conn.executescript("""
+        DROP TRIGGER IF EXISTS vault_notes_ai;
+        DROP TRIGGER IF EXISTS vault_notes_ad;
+        DROP TRIGGER IF EXISTS vault_notes_au;
+        DROP TABLE IF EXISTS vault_notes_fts;
+    """)
+    conn.commit()
+
+
+# ----- MeCab トークナイザ -----
+
+_tagger = None
+_mecab_available = None
+
+
+def _get_tagger():
+    global _tagger, _mecab_available
+    if _mecab_available is None:
+        try:
+            import fugashi
+            _tagger = fugashi.Tagger()
+            _mecab_available = True
+        except Exception:
+            _mecab_available = False
+            click.echo("警告: fugashi/unidic-lite が未インストール。MeCab トークン化なしで動作します。", err=True)
+    return _tagger if _mecab_available else None
+
+
+def _tokenize_ja(text: str) -> str:
+    """MeCabで形態素解析し、スペース区切りのトークン列を返す"""
+    tagger = _get_tagger()
+    if tagger is None:
+        return text
+    tokens = []
+    for word in tagger(text):
+        surface = word.surface
+        if surface.strip():
+            tokens.append(surface)
+    return " ".join(tokens)
 
 
 # ----- 埋め込みモデル -----
@@ -377,10 +427,12 @@ def index():
                 click.echo(f"  埋め込みエラー: {rel_path}[{chunk_index}]: {e}", err=True)
                 embedding = None
 
+            tokenized_text = _tokenize_ja(chunk_text)
+
             cursor = conn.execute(
-                """INSERT INTO vault_notes (file_path, chunk_index, file_name, type, concept, tags, chunk_text, file_hash, embedding)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (rel_path, chunk_index, file_name, note_type, concept, tags_json, chunk_text, content_hash, embedding),
+                """INSERT INTO vault_notes (file_path, chunk_index, file_name, type, concept, tags, chunk_text, tokenized_text, file_hash, embedding)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (rel_path, chunk_index, file_name, note_type, concept, tags_json, chunk_text, tokenized_text, content_hash, embedding),
             )
             row_id = cursor.lastrowid
             if embedding is not None:
@@ -429,6 +481,7 @@ def search(query: str, limit: int, no_rerank: bool):
 
     # --- FTS5 キーワード検索 ---
     fts_results: dict[int, int] = {}
+    tokenized_query = _tokenize_ja(query)
     try:
         rows = conn.execute(
             """
@@ -439,7 +492,7 @@ def search(query: str, limit: int, no_rerank: bool):
             ORDER BY rank
             LIMIT 20
             """,
-            (query,),
+            (tokenized_query,),
         ).fetchall()
         for rank, row in enumerate(rows, 1):
             fts_results[row[0]] = rank
