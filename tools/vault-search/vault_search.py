@@ -6,6 +6,16 @@ vault-search: Obsidian Vault のハイブリッド検索 CLI
   vault-search index     # インデックスの構築・更新
   vault-search search "クエリ"  # ベクトル + キーワード検索
   vault-search status    # DB の状態を表示
+
+設定ファイル (~/.config/vault-search/config.yaml):
+  default: my-vault
+  vaults:
+    my-vault:
+      path: ~/obsidian/my-vault
+      target_dirs: [Wiki, Areas, Projects, Inbox, Raws]
+    work:
+      path: ~/obsidian/work-vault
+      target_dirs: [Notes, Projects]
 """
 
 import hashlib
@@ -22,19 +32,58 @@ import numpy as np
 
 # ----- 定数 -----
 
-VAULT_PATH = Path.home() / "obsidian" / "my-vault"
+CONFIG_PATH = Path.home() / ".config" / "vault-search" / "config.yaml"
 DB_DIR = Path.home() / ".local" / "share" / "vault-search"
-DB_PATH = DB_DIR / "vault.db"
-TARGET_DIRS = ["Wiki", "Areas", "Projects", "Inbox", "Raws"]
+DEFAULT_VAULT_PATH = Path.home() / "obsidian" / "my-vault"
+DEFAULT_TARGET_DIRS = ["Wiki", "Areas", "Projects", "Inbox", "Raws"]
 CHUNK_SIZE = 400
 CHUNK_OVERLAP = 50
 
 
+# ----- Vault 設定 -----
+
+def _load_config() -> dict:
+    if CONFIG_PATH.exists():
+        try:
+            return yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _resolve_vault(name: str | None) -> tuple[str, Path, list[str]]:
+    """Vault名からDB名・パス・対象ディレクトリを解決する。返値は (vault_name, vault_path, target_dirs)"""
+    config = _load_config()
+    vaults = config.get("vaults", {})
+
+    if name is None:
+        name = config.get("default")
+
+    if name and name in vaults:
+        entry = vaults[name]
+        vault_path = Path(entry["path"]).expanduser()
+        target_dirs = entry.get("target_dirs", DEFAULT_TARGET_DIRS)
+        return name, vault_path, target_dirs
+
+    if name and vaults:
+        available = ", ".join(vaults.keys())
+        raise click.ClickException(f"Vault '{name}' が設定に見つかりません（設定済み: {available}）")
+
+    return "default", DEFAULT_VAULT_PATH, DEFAULT_TARGET_DIRS
+
+
+def _db_path_for(vault_name: str) -> Path:
+    if vault_name == "default":
+        return DB_DIR / "vault.db"
+    return DB_DIR / f"{vault_name}.db"
+
+
 # ----- DB 初期化 -----
 
-def _get_conn() -> sqlite3.Connection:
+def _get_conn(vault_name: str = "default") -> sqlite3.Connection:
     DB_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
+    db_path = _db_path_for(vault_name)
+    conn = sqlite3.connect(str(db_path))
 
     try:
         import sqlite_vec
@@ -347,15 +396,15 @@ def _file_hash(content: str) -> str:
 
 # ----- Vault 走査 -----
 
-def _scan_vault() -> list[tuple[str, str]]:
+def _scan_vault(vault_path: Path, target_dirs: list[str]) -> list[tuple[str, str]]:
     """Vault 内の対象ディレクトリから .md ファイルを走査し、(相対パス, 絶対パス) のリストを返す"""
     results = []
-    for dir_name in TARGET_DIRS:
-        target = VAULT_PATH / dir_name
+    for dir_name in target_dirs:
+        target = vault_path / dir_name
         if not target.exists():
             continue
         for md_file in target.rglob("*.md"):
-            rel_path = str(md_file.relative_to(VAULT_PATH))
+            rel_path = str(md_file.relative_to(vault_path))
             results.append((rel_path, str(md_file)))
     return results
 
@@ -369,11 +418,14 @@ def cli():
 
 
 @cli.command()
-def index():
+@click.option("--vault", "vault_name", default=None, help="対象Vault名（config.yaml で定義）")
+def index(vault_name: str | None):
     """Vault 全体を走査してインデックスを構築・更新する"""
-    conn = _get_conn()
+    resolved_name, vault_path, target_dirs = _resolve_vault(vault_name)
+    click.echo(f"Vault: {resolved_name} ({vault_path})")
+    conn = _get_conn(resolved_name)
 
-    files = _scan_vault()
+    files = _scan_vault(vault_path, target_dirs)
     click.echo(f"対象ファイル数: {len(files)}")
 
     indexed = 0
@@ -473,11 +525,13 @@ def index():
 
 @cli.command()
 @click.argument("query")
+@click.option("--vault", "vault_name", default=None, help="対象Vault名（config.yaml で定義）")
 @click.option("--limit", default=5, help="表示する結果数")
 @click.option("--no-rerank", "no_rerank", is_flag=True, help="リランクをスキップ")
-def search(query: str, limit: int, no_rerank: bool):
+def search(query: str, vault_name: str | None, limit: int, no_rerank: bool):
     """クエリテキストでハイブリッド検索する"""
-    conn = _get_conn()
+    resolved_name, vault_path, target_dirs = _resolve_vault(vault_name)
+    conn = _get_conn(resolved_name)
 
     # --- FTS5 キーワード検索 ---
     fts_results: dict[int, int] = {}
@@ -601,13 +655,16 @@ def search(query: str, limit: int, no_rerank: bool):
 
 
 @cli.command()
-def status():
+@click.option("--vault", "vault_name", default=None, help="対象Vault名（config.yaml で定義）")
+def status(vault_name: str | None):
     """インデックスの状態を表示する"""
-    if not DB_PATH.exists():
-        click.echo(f"DB が存在しません: {DB_PATH}")
+    resolved_name, vault_path, target_dirs = _resolve_vault(vault_name)
+    db_path = _db_path_for(resolved_name)
+    if not db_path.exists():
+        click.echo(f"DB が存在しません: {db_path}")
         return
 
-    conn = _get_conn()
+    conn = _get_conn(resolved_name)
 
     total_chunks = conn.execute("SELECT COUNT(*) FROM vault_notes").fetchone()[0]
     total_notes = conn.execute("SELECT COUNT(DISTINCT file_path) FROM vault_notes").fetchone()[0]
@@ -620,9 +677,9 @@ def status():
 
     conn.close()
 
-    click.echo(f"\n## vault-search ステータス\n")
-    click.echo(f"- DB パス: {DB_PATH}")
-    click.echo(f"- Vault パス: {VAULT_PATH}")
+    click.echo(f"\n## vault-search ステータス ({resolved_name})\n")
+    click.echo(f"- DB パス: {db_path}")
+    click.echo(f"- Vault パス: {vault_path}")
     click.echo(f"- 総ノート数: {total_notes}")
     click.echo(f"- 総チャンク数: {total_chunks}")
     click.echo(f"- 埋め込み済み: {with_embedding}")
@@ -631,6 +688,26 @@ def status():
     click.echo(f"\n### type 別ノート数")
     for note_type, count in types:
         click.echo(f"  - {note_type or '(未設定)'}: {count}")
+
+
+@cli.command()
+def vaults():
+    """設定済みの Vault 一覧を表示する"""
+    config = _load_config()
+    vault_entries = config.get("vaults", {})
+    default_name = config.get("default")
+
+    if not vault_entries:
+        click.echo(f"設定ファイルが未作成です: {CONFIG_PATH}")
+        click.echo(f"デフォルト Vault を使用: {DEFAULT_VAULT_PATH}")
+        return
+
+    click.echo(f"\n## 設定済み Vault 一覧\n")
+    for name, entry in vault_entries.items():
+        marker = " (default)" if name == default_name else ""
+        db_path = _db_path_for(name)
+        db_status = "indexed" if db_path.exists() else "not indexed"
+        click.echo(f"- {name}{marker}: {entry['path']} [{db_status}]")
 
 
 if __name__ == "__main__":
