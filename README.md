@@ -36,9 +36,15 @@ copilot plugin update obsidian
 copilot plugin uninstall obsidian
 ```
 
-## vault-search のセットアップ
+## vault-search
 
-Vault 内のノートをハイブリッド検索（FTS5 + ベクトル検索）するツール。
+Vault 内のノートをハイブリッド検索（FTS5 + ベクトル検索 + リランク）するツール。
+
+### インストール
+
+```bash
+bash tools/vault-search/install.sh
+```
 
 ### HF_TOKEN の設定
 
@@ -53,6 +59,49 @@ hf auth login
 ```
 
 詳細: https://huggingface.co/docs/huggingface_hub/guides/cli
+
+### 基本的な使い方
+
+```bash
+# インデックスの構築・更新
+vault-search index
+
+# 検索
+vault-search search "キーワード"
+
+# インデックスの状態確認
+vault-search status
+```
+
+### 複数 Vault の管理
+
+`~/.config/vault-search/config.yaml` で複数の Vault を登録できる。
+
+```yaml
+default: my-vault
+vaults:
+  my-vault:
+    path: ~/obsidian/my-vault
+    target_dirs: [Wiki, Areas, Projects, Inbox, Raws]
+  work:
+    path: ~/obsidian/work-vault
+    target_dirs: [Notes, Projects]
+```
+
+`--vault` オプションで対象を切り替える。省略時は `default` に指定した Vault が使われる。
+
+```bash
+# 特定の Vault を指定してインデックス構築
+vault-search index --vault work
+
+# 特定の Vault を検索
+vault-search search --vault work "キーワード"
+
+# 登録済み Vault の一覧
+vault-search vaults
+```
+
+設定ファイルがない場合は `~/obsidian/my-vault` をデフォルトとして動作する。
 
 ## scripts/
 
