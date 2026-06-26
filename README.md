@@ -36,6 +36,24 @@ copilot plugin update obsidian
 copilot plugin uninstall obsidian
 ```
 
+## vault-search のセットアップ
+
+Vault 内のノートをハイブリッド検索（FTS5 + ベクトル検索）するツール。
+
+### HF_TOKEN の設定
+
+モデルのダウンロードに Hugging Face Hub を使用する。認証トークンを設定するとレート制限の緩和・高速ダウンロードが有効になる（未設定でも動作するが警告が出る）。
+
+トークンは無料アカウントで作成できる。
+
+```bash
+# 1. https://huggingface.co/settings/tokens でトークンを作成（Read 権限）
+# 2. CLI でログイン
+hf auth login
+```
+
+詳細: https://huggingface.co/docs/huggingface_hub/guides/cli
+
 ## scripts/
 
 Vault 管理用の Python スクリプト群。
