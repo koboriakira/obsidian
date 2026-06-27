@@ -523,19 +523,17 @@ def index(vault_name: str | None):
     click.echo(f"\nインデックス完了: {indexed} 件更新/追加, {deleted} 件削除, {errors} 件エラー")
 
 
-@cli.command()
-@click.argument("query")
-@click.option("--vault", "vault_name", default=None, help="対象Vault名（config.yaml で定義）")
-@click.option("--limit", default=5, help="表示する結果数")
-@click.option("--no-rerank", "no_rerank", is_flag=True, help="リランクをスキップ")
-def search(query: str, vault_name: str | None, limit: int, no_rerank: bool):
-    """クエリテキストでハイブリッド検索する"""
-    resolved_name, vault_path, target_dirs = _resolve_vault(vault_name)
-    conn = _get_conn(resolved_name)
+def _search_single_vault(conn: sqlite3.Connection, query: str, tokenized_query: str,
+                         dirs: tuple[str, ...], vault_name: str) -> list[tuple[float, tuple, str]]:
+    """単一VaultのDB内でハイブリッド検索を実行する。
+
+    Returns: [(rrf_score, row_info, vault_name), ...]
+        row_info = (id, file_path, file_name, type, concept, tags, chunk_text)
+    """
+    fetch_limit = 50 if dirs else 20
 
     # --- FTS5 キーワード検索 ---
     fts_results: dict[int, int] = {}
-    tokenized_query = _tokenize_ja(query)
     try:
         rows = conn.execute(
             """
@@ -544,14 +542,14 @@ def search(query: str, vault_name: str | None, limit: int, no_rerank: bool):
             JOIN vault_notes_fts fts ON n.id = fts.rowid
             WHERE vault_notes_fts MATCH ?
             ORDER BY rank
-            LIMIT 20
+            LIMIT ?
             """,
-            (tokenized_query,),
+            (tokenized_query, fetch_limit),
         ).fetchall()
         for rank, row in enumerate(rows, 1):
             fts_results[row[0]] = rank
     except Exception as e:
-        click.echo(f"FTS検索エラー: {e}", err=True)
+        click.echo(f"FTS検索エラー ({vault_name}): {e}", err=True)
 
     # --- ベクトル類似検索 ---
     vec_results: dict[int, int] = {}
@@ -564,14 +562,13 @@ def search(query: str, vault_name: str | None, limit: int, no_rerank: bool):
                 FROM vec_vault_notes v
                 WHERE v.embedding MATCH ?
                 ORDER BY v.distance
-                LIMIT 20
+                LIMIT ?
                 """,
-                (query_embedding,),
+                (query_embedding, fetch_limit),
             ).fetchall()
             for rank, row in enumerate(rows, 1):
                 vec_results[row[0]] = rank
         except Exception:
-            # vec0 が使えない場合はフォールバック
             all_rows = conn.execute(
                 "SELECT id, embedding FROM vault_notes WHERE embedding IS NOT NULL",
             ).fetchall()
@@ -580,10 +577,10 @@ def search(query: str, vault_name: str | None, limit: int, no_rerank: bool):
                 sim = _cosine_similarity(query_embedding, row[1])
                 scored.append((row[0], sim))
             scored.sort(key=lambda x: x[1], reverse=True)
-            for rank, item in enumerate(scored[:20], 1):
+            for rank, item in enumerate(scored[:fetch_limit], 1):
                 vec_results[item[0]] = rank
     except Exception as e:
-        click.echo(f"ベクトル検索エラー: {e}", err=True)
+        click.echo(f"ベクトル検索エラー ({vault_name}): {e}", err=True)
 
     # --- RRF スコア計算 ---
     k = 60
@@ -598,49 +595,106 @@ def search(query: str, vault_name: str | None, limit: int, no_rerank: bool):
         rrf_scores[row_id] = score
 
     if not rrf_scores:
-        click.echo("検索結果が見つかりませんでした")
-        conn.close()
-        return
+        return []
 
-    # RRF 上位20件を取得
-    top20_ids = sorted(rrf_scores, key=lambda x: rrf_scores[x], reverse=True)[:20]
+    top_ids = sorted(rrf_scores, key=lambda x: rrf_scores[x], reverse=True)
+
+    # --- ディレクトリフィルタ ---
+    if dirs:
+        path_rows = conn.execute(
+            f"SELECT id, file_path FROM vault_notes WHERE id IN ({','.join('?' * len(top_ids))})",
+            top_ids,
+        ).fetchall()
+        path_map = {r[0]: r[1] for r in path_rows}
+        top_ids = [rid for rid in top_ids if any(path_map.get(rid, "").startswith(d + "/") for d in dirs)]
+
+    top_ids = top_ids[:20]
+    if not top_ids:
+        return []
 
     rows_info = conn.execute(
-        f"SELECT id, file_path, file_name, type, concept, tags, chunk_text FROM vault_notes WHERE id IN ({','.join('?' * len(top20_ids))})",
-        top20_ids,
+        f"SELECT id, file_path, file_name, type, concept, tags, chunk_text FROM vault_notes WHERE id IN ({','.join('?' * len(top_ids))})",
+        top_ids,
     ).fetchall()
     info_map = {r[0]: r for r in rows_info}
+
+    return [(rrf_scores[rid], info_map[rid], vault_name) for rid in top_ids if rid in info_map]
+
+
+@cli.command()
+@click.argument("query")
+@click.option("--vault", "vault_names", multiple=True, help="対象Vault名（複数指定可、config.yaml で定義）")
+@click.option("--dir", "dirs", multiple=True, help="検索対象ディレクトリ（複数指定可、例: Wiki Raws）")
+@click.option("--limit", default=5, help="表示する結果数")
+@click.option("--no-rerank", "no_rerank", is_flag=True, help="リランクをスキップ")
+def search(query: str, vault_names: tuple[str, ...], dirs: tuple[str, ...], limit: int, no_rerank: bool):
+    """クエリテキストでハイブリッド検索する"""
+    if not vault_names:
+        vaults = [_resolve_vault(None)]
+    else:
+        seen = set()
+        vaults = []
+        for name in vault_names:
+            if name not in seen:
+                seen.add(name)
+                vaults.append(_resolve_vault(name))
+
+    if dirs:
+        for resolved_name, _vault_path, target_dirs in vaults:
+            for d in dirs:
+                if d not in target_dirs:
+                    raise click.ClickException(
+                        f"ディレクトリ '{d}' は Vault '{resolved_name}' の target_dirs に含まれていません"
+                        f"（設定済み: {', '.join(target_dirs)}）"
+                    )
+
+    tokenized_query = _tokenize_ja(query)
+    all_candidates: list[tuple[float, tuple, str]] = []
+
+    for resolved_name, _vault_path, _target_dirs in vaults:
+        conn = _get_conn(resolved_name)
+        candidates = _search_single_vault(conn, query, tokenized_query, dirs, resolved_name)
+        all_candidates.extend(candidates)
+        conn.close()
+
+    if not all_candidates:
+        click.echo("検索結果が見つかりませんでした")
+        return
+
+    all_candidates.sort(key=lambda x: x[0], reverse=True)
+    top_candidates = all_candidates[:20]
 
     # リランク処理
     if not no_rerank:
         try:
             reranker = _get_reranker()
-            pairs = [(query, info_map[row_id][6]) for row_id in top20_ids if row_id in info_map]
-            valid_ids = [row_id for row_id in top20_ids if row_id in info_map]
+            pairs = [(query, c[1][6]) for c in top_candidates]
             rerank_scores = reranker.predict(pairs)
-            scored_ids = sorted(zip(valid_ids, rerank_scores), key=lambda x: x[1], reverse=True)
-            final_order = [(float(score), info_map[row_id]) for row_id, score in scored_ids]
+            reranked = sorted(zip(top_candidates, rerank_scores), key=lambda x: x[1], reverse=True)
+            final_order = [(float(rs), c[1], c[2]) for c, rs in reranked]
         except Exception as e:
             click.echo(f"リランクをスキップ（エラー: {e}）", err=True)
             no_rerank = True
 
     if no_rerank:
-        final_order = [(rrf_scores[row_id], info_map[row_id]) for row_id in top20_ids if row_id in info_map]
+        final_order = [(s, r, v) for s, r, v in top_candidates]
 
     # チャンク単位スコアを file_path でデデュプ（最高スコアのチャンクで代表）
-    best_by_path: dict[str, tuple[float, tuple]] = {}
-    for score, r in final_order:
-        file_path = r[1]
-        if file_path not in best_by_path or score > best_by_path[file_path][0]:
-            best_by_path[file_path] = (score, r)
+    multi_vault = len(vaults) > 1
+    best_by_path: dict[str, tuple[float, tuple, str]] = {}
+    for score, r, vn in final_order:
+        key = f"{vn}:{r[1]}" if multi_vault else r[1]
+        if key not in best_by_path or score > best_by_path[key][0]:
+            best_by_path[key] = (score, r, vn)
 
     final_scores = sorted(best_by_path.values(), key=lambda x: x[0], reverse=True)
 
     click.echo(f"\n## 「{query}」の検索結果（上位 {min(limit, len(final_scores))} 件）\n")
 
-    for i, (score, r) in enumerate(final_scores[:limit], 1):
+    for i, (score, r, vn) in enumerate(final_scores[:limit], 1):
         row_id, file_path, file_name, note_type, concept, tags, chunk_text = r
-        click.echo(f"### {i}. {file_path}  (score: {score:.4f})")
+        path_display = f"[{vn}] {file_path}" if multi_vault else file_path
+        click.echo(f"### {i}. {path_display}  (score: {score:.4f})")
         if note_type:
             click.echo(f"  type: {note_type}")
         if concept:
@@ -650,8 +704,6 @@ def search(query: str, vault_name: str | None, limit: int, no_rerank: bool):
         preview = chunk_text.replace("\n", " ")[:100]
         click.echo(f"  {preview}...")
         click.echo("")
-
-    conn.close()
 
 
 @cli.command()
